@@ -9,8 +9,8 @@ from transformers import Qwen2VLForConditionalGeneration, Qwen2VLProcessor, Trai
 from peft import LoraConfig, get_peft_model, TaskType
 from qwen_vl_utils import process_vision_info
 
-# --- 配置 ---
-MODEL_ID = "Qwen/Qwen2-VL-2B-Instruct"  # 学生也用这个，从头训练(或基于Teacher继续练)
+# --- Configuration ---
+MODEL_ID = "Qwen/Qwen2-VL-2B-Instruct"  # Base model ID for Student
 DATA_DIR = "custom_dataset"
 REAL_CSV = os.path.join(DATA_DIR, "train_labels.csv")
 PSEUDO_CSV = os.path.join(DATA_DIR, "train_pseudo.csv")
@@ -19,7 +19,7 @@ PSEUDO_IMG_DIR = os.path.join(DATA_DIR, "train_non_labels")
 OUTPUT_DIR = "student_checkpoint"
 
 
-# 复用 Dataset 类 (稍微修改以适应两种CSV格式)
+# Reusable Dataset class (modified for two CSV formats)
 class MixedVQADataset(Dataset):
     def __init__(self, df, img_dir, processor):
         self.df = df
@@ -32,9 +32,9 @@ class MixedVQADataset(Dataset):
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
 
-        # 处理解释
+        # Process explanation
         explanation = str(row['explanation'])
-        # 只有真实数据的解释是列表字符串，需要解析
+        # Only real data explanations are list strings and need parsing
         if explanation.startswith('['):
             try:
                 explanation = random.choice(ast.literal_eval(explanation))
@@ -43,7 +43,7 @@ class MixedVQADataset(Dataset):
 
         answer_text = f"Answer: {row['answer']}\nExplanation: {explanation}"
 
-        # 兼容列名
+        # Column name compatibility
         fname = row['file'] if 'file' in row else row['image']
         image_path = os.path.join(self.img_dir, fname)
 
@@ -68,39 +68,39 @@ class MixedVQADataset(Dataset):
 
 
 def train_student():
-    print("🎓 正在启动 Student 混合训练...")
+    print("Starting Student Mixed Training...")
 
-    # 1. 加载全新的基础模型 (Student)
+    # 1. Load fresh base model (Student)
     model = Qwen2VLForConditionalGeneration.from_pretrained(
         MODEL_ID, torch_dtype=torch.bfloat16, device_map="auto"
     )
     processor = Qwen2VLProcessor.from_pretrained(MODEL_ID, min_pixels=256 * 256, max_pixels=512 * 512)
 
-    # 添加 LoRA
+    # Add LoRA
     peft_config = LoraConfig(
-        task_type=TaskType.CAUSAL_LM, r=32, lora_alpha=64,  # 学生模型可以用更大的Rank
+        task_type=TaskType.CAUSAL_LM, r=32, lora_alpha=64,
         target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
     )
     model = get_peft_model(model, peft_config)
 
-    # 2. 准备混合数据
+    # 2. Prepare mixed data
     df_real = pd.read_csv(REAL_CSV)
     df_pseudo = pd.read_csv(PSEUDO_CSV)
 
     ds_real = MixedVQADataset(df_real, REAL_IMG_DIR, processor)
     ds_pseudo = MixedVQADataset(df_pseudo, PSEUDO_IMG_DIR, processor)
 
-    # 拼接数据集
+    # Concatenate datasets
     mixed_dataset = ConcatDataset([ds_real, ds_pseudo])
-    print(f"真实数据: {len(ds_real)}, 伪数据: {len(ds_pseudo)}, 总计: {len(mixed_dataset)}")
+    print(f"Real data: {len(ds_real)}, Pseudo data: {len(ds_pseudo)}, Total: {len(mixed_dataset)}")
 
-    # 3. 训练参数 (学生跑更久一点)
+    # 3. Training Arguments (Student runs for longer)
     args = TrainingArguments(
         output_dir=OUTPUT_DIR,
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         num_train_epochs=5,
-        learning_rate=1e-4,  # 学习率稍小
+        learning_rate=1e-4,
         bf16=True,
         logging_steps=20,
         save_strategy="epoch",
@@ -117,7 +117,7 @@ def train_student():
     trainer.train()
     trainer.save_model(os.path.join(OUTPUT_DIR, "final"))
     processor.save_pretrained(os.path.join(OUTPUT_DIR, "final"))
-    print("🎉 Student 模型训练完成！")
+    print("Student Model Training complete!")
 
 
 if __name__ == "__main__":
