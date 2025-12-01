@@ -5,7 +5,7 @@ from transformers import Qwen2VLForConditionalGeneration, Qwen2VLProcessor
 from qwen_vl_utils import process_vision_info
 from tqdm import tqdm
 
-# --- 配置 ---
+# --- Configuration ---
 STUDENT_PATH = "student_checkpoint/final"
 DATA_DIR = "custom_dataset"
 TEST_CSV = os.path.join(DATA_DIR, "test_non_labels.csv")
@@ -14,7 +14,7 @@ SUBMISSION_FILE = "submission.csv"
 
 
 def inference():
-    print(f"🚀 加载 Student 模型: {STUDENT_PATH}")
+    print(f"Loading Student Model from: {STUDENT_PATH}")
 
     model = Qwen2VLForConditionalGeneration.from_pretrained(
         STUDENT_PATH, torch_dtype=torch.bfloat16, device_map="auto"
@@ -26,7 +26,7 @@ def inference():
 
     results = []
 
-    print("开始最终推理...")
+    print("Starting final inference...")
     for _, row in tqdm(df.iterrows(), total=len(df)):
         img_path = os.path.join(IMG_DIR, row['image'])
 
@@ -77,7 +77,7 @@ def inference():
         })
 
     pd.DataFrame(results).to_csv(SUBMISSION_FILE, index=False)
-    print(f"✅ 提交文件生成完毕: {SUBMISSION_FILE}")
+    print(f"Submission file generated: {SUBMISSION_FILE}")
 
 
 if __name__ == "__main__":
