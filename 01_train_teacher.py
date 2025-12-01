@@ -87,7 +87,7 @@ class VQADataset(Dataset):
 
 
 def train_teacher():
-    print("🚀 正在启动 Teacher 训练...")
+    print("正在启动 Teacher 训练...")
 
     # 1. 加载模型 (BF16, 16GB显存毫无压力)
     model = Qwen2VLForConditionalGeneration.from_pretrained(
@@ -133,4 +133,5 @@ def train_teacher():
 
 
 if __name__ == "__main__":
+
     train_teacher()
