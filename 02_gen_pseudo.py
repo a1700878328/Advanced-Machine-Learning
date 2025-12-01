@@ -5,8 +5,8 @@ from transformers import Qwen2VLForConditionalGeneration, Qwen2VLProcessor
 from qwen_vl_utils import process_vision_info
 from tqdm import tqdm
 
-# --- 配置 ---
-TEACHER_PATH = "teacher_checkpoint/final"  # 刚才训练好的教师路径
+# --- Configuration ---
+TEACHER_PATH = "teacher_checkpoint/final"
 DATA_DIR = "custom_dataset"
 UNLABELED_CSV = os.path.join(DATA_DIR, "train_non_labels.csv")
 IMG_DIR = os.path.join(DATA_DIR, "train_non_labels")
@@ -14,7 +14,7 @@ OUTPUT_CSV = os.path.join(DATA_DIR, "train_pseudo.csv")
 
 
 def generate_pseudo():
-    print("🔮 正在加载 Teacher 模型生成伪标签...")
+    print("Loading Teacher Model to generate pseudo labels...")
 
     model = Qwen2VLForConditionalGeneration.from_pretrained(
         TEACHER_PATH, torch_dtype=torch.bfloat16, device_map="auto"
@@ -22,7 +22,7 @@ def generate_pseudo():
     processor = Qwen2VLProcessor.from_pretrained(TEACHER_PATH)
 
     df = pd.read_csv(UNLABELED_CSV)
-    # 兼容列名
+    # Column name compatibility
     if 'file' in df.columns: df.rename(columns={'file': 'image'}, inplace=True)
 
     results = []
@@ -49,7 +49,7 @@ def generate_pseudo():
 
             generated_ids = model.generate(**inputs, max_new_tokens=128, do_sample=False)
 
-            # 解码
+            # Decode
             generated_ids_trimmed = [
                 out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
             ]
@@ -57,7 +57,7 @@ def generate_pseudo():
                 generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
             )[0]
 
-            # 解析 "Answer: ... Explanation: ..."
+            # Parse "Answer: ... Explanation: ..."
             answer = "no"
             explanation = "No explanation."
             try:
@@ -72,19 +72,19 @@ def generate_pseudo():
             except:
                 pass
 
-            # 保存所有原始列 + 伪标签
+            # Save all original columns + pseudo labels
             results.append({
                 "id": row['id'],
                 "file": row['image'],
                 "question": row['question'],
                 "answer": answer,
                 "explanation": explanation,
-                "is_pseudo": True  # 标记一下
+                "is_pseudo": True  # Mark as pseudo-label
             })
 
-    # 保存伪标签文件
+    # Save pseudo-label file
     pd.DataFrame(results).to_csv(OUTPUT_CSV, index=False)
-    print(f"✅ 伪标签已生成: {OUTPUT_CSV}")
+    print(f"Pseudo labels generated: {OUTPUT_CSV}")
 
 
 if __name__ == "__main__":
