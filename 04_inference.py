@@ -1,0 +1,84 @@
+import os
+import torch
+import pandas as pd
+from transformers import Qwen2VLForConditionalGeneration, Qwen2VLProcessor
+from qwen_vl_utils import process_vision_info
+from tqdm import tqdm
+
+# --- 配置 ---
+STUDENT_PATH = "student_checkpoint/final"
+DATA_DIR = "custom_dataset"
+TEST_CSV = os.path.join(DATA_DIR, "test_non_labels.csv")
+IMG_DIR = os.path.join(DATA_DIR, "test")
+SUBMISSION_FILE = "submission.csv"
+
+
+def inference():
+    print(f"🚀 加载 Student 模型: {STUDENT_PATH}")
+
+    model = Qwen2VLForConditionalGeneration.from_pretrained(
+        STUDENT_PATH, torch_dtype=torch.bfloat16, device_map="auto"
+    )
+    processor = Qwen2VLProcessor.from_pretrained(STUDENT_PATH)
+
+    df = pd.read_csv(TEST_CSV)
+    if 'file' in df.columns: df.rename(columns={'file': 'image'}, inplace=True)
+
+    results = []
+
+    print("开始最终推理...")
+    for _, row in tqdm(df.iterrows(), total=len(df)):
+        img_path = os.path.join(IMG_DIR, row['image'])
+
+        messages = [{
+            "role": "user",
+            "content": [
+                {"type": "image", "image": img_path},
+                {"type": "text", "text": row['question']}
+            ]
+        }]
+
+        text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
+        image_inputs, video_inputs = process_vision_info(messages)
+        inputs = processor(
+            text=[text], images=image_inputs, videos=video_inputs,
+            padding=True, return_tensors="pt"
+        ).to("cuda")
+
+        with torch.no_grad():
+            generated_ids = model.generate(**inputs, max_new_tokens=128, do_sample=False)
+
+        generated_ids_trimmed = [
+            out_ids[len(in_ids):] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+        ]
+        output_text = processor.batch_decode(
+            generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+        )[0]
+
+        answer = "no"
+        explanation = "No explanation."
+        try:
+            if "Answer:" in output_text:
+                parts = output_text.split("Answer:", 1)[1]
+                if "Explanation:" in parts:
+                    ans, exp = parts.split("Explanation:", 1)
+                    answer = ans.strip()
+                    explanation = exp.strip()
+                else:
+                    answer = parts.strip()
+                    explanation = parts.strip()
+        except:
+            pass
+
+        results.append({
+            "id": row['id'],
+            "answer": answer,
+            "explanation": explanation
+        })
+
+    pd.DataFrame(results).to_csv(SUBMISSION_FILE, index=False)
+    print(f"✅ 提交文件生成完毕: {SUBMISSION_FILE}")
+
+
+if __name__ == "__main__":
+    inference()
